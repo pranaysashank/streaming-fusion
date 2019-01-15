@@ -29,6 +29,7 @@ module StreamingD
 
 import Control.Monad.IO.Class
 import Prelude hiding (drop, filter, map, mapM, mapM_, pred, sum)
+import GHC.Types (SPEC(..))
 
 data Of a b = !a :> b
 
@@ -143,13 +144,13 @@ maps natTrans (Stream step state) = Stream step' state
 
 {-# INLINABLE run #-}
 run :: Monad m => Stream m m r -> m r
-run (Stream step state) = go state
+run (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
-            Yield fs -> fs >>= go
-            Skip s -> go s
+            Yield fs -> fs >>= go SPEC
+            Skip s -> go SPEC s
             Return r -> return r
 
 {-# INLINE_NORMAL concats #-}
@@ -267,81 +268,81 @@ map f = mapM (return . f)
 
 {-# INLINE_NORMAL mapM_ #-}
 mapM_ :: Monad m => (a -> m b) -> Stream (Of a) m r -> m r
-mapM_ f (Stream step state) = go state
+mapM_ f (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
-            Yield (x :> rest) -> f x *> go rest
-            Skip s -> go s
+            Yield (x :> rest) -> f x *> go SPEC rest
+            Skip s -> go SPEC s
             Return r -> return r
 
 {-# INLINE_NORMAL sum #-}
 sum :: (Monad m, Num a) => Stream (Of a) m r -> m (Of a r)
-sum (Stream step state) = go state
+sum (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
             Yield (x :> rest) ->
-                (\(acc :> r) -> ((x + acc) :> r)) `fmap` (go rest)
-            Skip s -> go s
+                (\(acc :> r) -> ((x + acc) :> r)) `fmap` (go SPEC rest)
+            Skip s -> go SPEC s
             Return r -> return (0 :> r)
 
 {-# INLINE_NORMAL sum_ #-}
 sum_ :: (Monad m, Num a) => Stream (Of a) m r -> m a
-sum_ (Stream step state) = go state
+sum_ (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
-            Yield (x :> rest) -> (x +) `fmap` (go rest)
-            Skip s -> go s
+            Yield (x :> rest) -> (x +) `fmap` (go SPEC rest)
+            Skip s -> go SPEC s
             Return _ -> return 0
 
 {-# INLINE_NORMAL toList #-}
 toList :: Monad m => Stream (Of a) m r -> m (Of [a] r)
-toList (Stream step state) = go state
+toList (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
             Yield (x :> rest) ->
-                (\(xs :> r) -> ((x : xs) :> r)) `fmap` (go rest)
-            Skip s -> go s
+                (\(xs :> r) -> ((x : xs) :> r)) `fmap` (go SPEC rest)
+            Skip s -> go SPEC s
             Return r -> return ([] :> r)
 
 {-# INLINE_NORMAL toList_ #-}
 toList_ :: Monad m => Stream (Of a) m r -> m [a]
-toList_ (Stream step state) = go state
+toList_ (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
-            Yield (x :> rest) -> (x :) `fmap` (go rest)
-            Skip s -> go s
+            Yield (x :> rest) -> (x :) `fmap` (go SPEC rest)
+            Skip s -> go SPEC s
             Return _ -> return []
 
 {-# INLINE_NORMAL effects #-}
 effects :: Monad m => Stream (Of a) m r -> m r
-effects (Stream step state) = go state
+effects (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
-            Yield (_ :> rst) -> go rst
-            Skip s -> go s
+            Yield (_ :> rst) -> go SPEC rst
+            Skip s -> go SPEC s
             Return r -> return r
 
 {-# INLINE_NORMAL printStream #-}
 printStream :: (MonadIO m, Show a) =>Stream (Of a) m r -> m r
-printStream (Stream step state) = go state
+printStream (Stream step state) = go SPEC state
   where
-    go st = do
+    go !_ st = do
         nxt <- step st
         case nxt of
             Yield (x :> rst) -> do
                 liftIO (print x)
-                go rst
-            Skip  s -> go s
+                go SPEC rst
+            Skip  s -> go SPEC s
             Return r -> return r
