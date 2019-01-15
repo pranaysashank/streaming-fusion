@@ -1,6 +1,9 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE Rank2Types #-}
+
+#include "inline.hs"
 
 module StreamingD
     ( Stream
@@ -30,6 +33,7 @@ import Prelude hiding (drop, filter, map, mapM, mapM_, pred, sum)
 data Of a b = !a :> b
 
 instance Functor (Of a) where
+    {-# INLINE fmap #-}
     fmap f (a :> x) = a :> (f x)
 
 data Streaming f m r = Stepping !(f (Streaming f m r))
@@ -44,6 +48,7 @@ data Step f s r = Yield !(f s)
 
 instance Monad m => Functor (Stream f m) where
   -- fmap :: (a -> b) -> Stream f m a -> Stream f m b
+  {-# INLINABLE fmap #-}
   fmap f (Stream step state) = Stream step' state
     where
       step' st = do
@@ -54,9 +59,11 @@ instance Monad m => Functor (Stream f m) where
               Return r -> Return (f r)
 
 instance (Functor f, Monad m) => Applicative (Stream f m) where
+    {-# INLINE pure #-}
     pure r = Stream (\_ -> return $ Return r) ()
 
 --  (<*>) :: Stream f m (a -> b) -> Stream f m a -> Stream f m b
+    {-# INLINE (<*>) #-}
     (Stream step state) <*> (Stream istep istate) = Stream step' (Left state)
       where
         step' (Left st) = do
@@ -74,9 +81,11 @@ instance (Functor f, Monad m) => Applicative (Stream f m) where
                 Return r -> Return (f r)
 
 instance (Functor f, Monad m) => Monad (Stream f m) where
+    {-# INLINE return #-}
     return = pure
 
 --  (>>=) :: Stream f m a -> (a -> Stream f m b) -> Stream f m b
+    {-# INLINABLE (>>=) #-}
     (Stream step state) >>= f = Stream step' (Left state)
        where
          step' (Left st) = do
@@ -93,6 +102,7 @@ instance (Functor f, Monad m) => Monad (Stream f m) where
                   Skip   s -> Skip (Right (Stream istep s))
                   Return r -> Return r
 
+{-# INLINE_NORMAL inspect #-}
 inspect :: (Functor f, Monad m) => Stream f m r -> m (Either r (f (Stream f m r)))
 inspect (Stream step state) = go state
   where
@@ -103,15 +113,18 @@ inspect (Stream step state) = go state
             Skip s -> go s
             Return r -> return (Left r)
 
+{-# INLINE_NORMAL unfold #-}
 unfold :: Monad m => (s -> m (Either r (f s))) -> s -> Stream f m r
 unfold gen state = (Stream step state)
   where
+    {-# INLINE_LATE step #-}
     step st = do
         nxt <- gen st
         case nxt of
             Left r -> return $ Return r
             Right fs -> return $ Yield (fs)
 
+{-# INLINE_NORMAL maps #-}
 maps ::
        Monad m
     => (forall x. f x -> g x)
@@ -119,6 +132,7 @@ maps ::
     -> Stream g m r
 maps natTrans (Stream step state) = Stream step' state
   where
+    {-# INLINE_LATE step' #-}
     step' st = do
         nxt <- step st
         return $
@@ -127,6 +141,7 @@ maps natTrans (Stream step state) = Stream step' state
                 Skip s -> Skip s
                 Return r -> Return r
 
+{-# INLINABLE run #-}
 run :: Monad m => Stream m m r -> m r
 run (Stream step state) = go state
   where
@@ -137,9 +152,11 @@ run (Stream step state) = go state
             Skip s -> go s
             Return r -> return r
 
+{-# INLINE_NORMAL concats #-}
 concats :: (Monad m, Functor f) => Stream (Stream f m) m r -> Stream f m r
 concats (Stream step state) = (Stream step' (Left state))
   where
+    {-# INLINE_LATE step' #-}
     step' (Left st) = do
         nxt <- step st
         case nxt of
@@ -160,12 +177,14 @@ concats (Stream step state) = (Stream step' (Left state))
                 Return r -> Skip (Left r)
 
 
+{-# INLINE_NORMAL splitsAt #-}
 splitsAt ::
        (Monad m, Functor f) => Int -> Stream f m r -> Stream f m (Stream f m r)
 splitsAt n str
     | n <= 0 = (Stream (\_ -> return $ Return str) ())
 splitsAt n (Stream step state) = Stream step' (Left (state, n-1))
   where
+    {-# INLINE_LATE step' #-}
     step' (Left (st, i)) = do
         nxt <- step st
         return $
@@ -178,11 +197,13 @@ splitsAt n (Stream step state) = Stream step' (Left (state, n-1))
                 Return r -> Return (Stream (\_ -> return (Return r)) ())
     step' (Right s) = return $ Return (Stream step s)
 
+{-# INLINE_NORMAL drop #-}
 drop :: Monad m => Int -> Stream (Of a) m r -> Stream (Of a) m r
 drop n str
     | n <= 0 = str
 drop n (Stream step state) = (Stream step' (state, 0))
   where
+    {-# INLINE_LATE step' #-}
     step' (st, i)
         | i < n = do
             nxt <- step st
@@ -199,15 +220,19 @@ drop n (Stream step state) = (Stream step' (state, 0))
                     Skip s -> Skip (s, i)
                     Return r -> Return r
 
+{-# INLINE_NORMAL each #-}
 each :: Monad m => [a] -> Stream (Of a) m ()
 each = Stream step
   where
+    {-# INLINE_LATE step #-}
     step (x:xs) = return $ Yield (x :> xs)
     step _ = return $ Return ()
 
+{-# INLINE_NORMAL filterM #-}
 filterM :: Monad m => (a -> m Bool) -> Stream (Of a) m r -> Stream (Of a) m r
 filterM pred (Stream step state) = Stream step' state
   where
+    {-# INLINE_LATE step' #-}
     step' st = do
         nxt <- step st
         case nxt of
@@ -220,12 +245,15 @@ filterM pred (Stream step state) = Stream step' state
             Skip s -> return $ Skip s
             Return r -> return $ Return r
 
+{-# INLINE filter #-}
 filter :: Monad m => (a -> Bool) -> Stream (Of a) m r -> Stream (Of a) m r
 filter f = filterM (return . f)
 
+{-# INLINE_NORMAL mapM #-}
 mapM :: Monad m => (a -> m b) -> Stream (Of a) m r -> Stream (Of b) m r
 mapM f (Stream step state) = Stream step' state
   where
+    {-# INLINE_LATE step' #-}
     step' st = do
         nxt <- step st
         case nxt of
@@ -233,9 +261,11 @@ mapM f (Stream step state) = Stream step' state
             Skip s -> return $ Skip s
             Return r -> return $ Return r
 
+{-# INLINE map #-}
 map :: Monad m => (a -> b) -> Stream (Of a) m r -> Stream (Of b) m r
 map f = mapM (return . f)
 
+{-# INLINE_NORMAL mapM_ #-}
 mapM_ :: Monad m => (a -> m b) -> Stream (Of a) m r -> m r
 mapM_ f (Stream step state) = go state
   where
@@ -246,6 +276,7 @@ mapM_ f (Stream step state) = go state
             Skip s -> go s
             Return r -> return r
 
+{-# INLINE_NORMAL sum #-}
 sum :: (Monad m, Num a) => Stream (Of a) m r -> m (Of a r)
 sum (Stream step state) = go state
   where
@@ -257,6 +288,7 @@ sum (Stream step state) = go state
             Skip s -> go s
             Return r -> return (0 :> r)
 
+{-# INLINE_NORMAL sum_ #-}
 sum_ :: (Monad m, Num a) => Stream (Of a) m r -> m a
 sum_ (Stream step state) = go state
   where
@@ -267,6 +299,7 @@ sum_ (Stream step state) = go state
             Skip s -> go s
             Return _ -> return 0
 
+{-# INLINE_NORMAL toList #-}
 toList :: Monad m => Stream (Of a) m r -> m (Of [a] r)
 toList (Stream step state) = go state
   where
@@ -278,6 +311,7 @@ toList (Stream step state) = go state
             Skip s -> go s
             Return r -> return ([] :> r)
 
+{-# INLINE_NORMAL toList_ #-}
 toList_ :: Monad m => Stream (Of a) m r -> m [a]
 toList_ (Stream step state) = go state
   where
@@ -288,6 +322,7 @@ toList_ (Stream step state) = go state
             Skip s -> go s
             Return _ -> return []
 
+{-# INLINE_NORMAL effects #-}
 effects :: Monad m => Stream (Of a) m r -> m r
 effects (Stream step state) = go state
   where
@@ -298,6 +333,7 @@ effects (Stream step state) = go state
             Skip s -> go s
             Return r -> return r
 
+{-# INLINE_NORMAL printStream #-}
 printStream :: (MonadIO m, Show a) =>Stream (Of a) m r -> m r
 printStream (Stream step state) = go state
   where
