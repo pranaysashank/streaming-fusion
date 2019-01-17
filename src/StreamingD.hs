@@ -20,8 +20,10 @@ module StreamingD
     , maps
     , run
     , concats
+    , chunksOf
     , groupBy
     , group
+    , intercalates
     , span
     , splitAt
     , drop
@@ -37,6 +39,7 @@ module StreamingD
     , takeWhile
     , zipWithM
     , zipWith
+    , inspect
     , foldlM'
     , foldl'
     , foldlM'_
@@ -51,6 +54,7 @@ module StreamingD
     , last_
     , effects
     , printStream
+    , stdinLn
     ) where
 
 import Control.Monad.IO.Class
@@ -59,6 +63,7 @@ import Prelude
                span, splitAt, sum, take, takeWhile, zipWith)
 import GHC.Generics
 import GHC.Types (SPEC(..))
+import System.IO
 
 data Of a b = !a :> b deriving (Generic)
 
@@ -219,20 +224,15 @@ run (Stream step state) = go SPEC state
 
 {-# INLINE_NORMAL concats #-}
 concats :: (Monad m, Functor f) => Stream (Stream f m) m r -> Stream f m r
-concats (Stream step state) = (Stream step' (Left state))
+concats (Stream step state) = Stream step' (Left state)
   where
     {-# INLINE_LATE step' #-}
     step' (Left st) = do
         nxt <- step st
-        case nxt of
-            Yield fs -> do
-                x <- inspect fs
-                return $
-                    case x of
-                        Left r -> Skip (Left r)
-                        Right fsp -> Yield (Right `fmap` fsp)
-            Skip s -> return $ Skip (Left s)
-            Return r -> return $ Return r
+        return $ case nxt of
+            Yield fs -> Skip (Right fs)
+            Skip s -> Skip (Left s)
+            Return r -> Return r
     step' (Right (Stream istep ist)) = do
         nxt <- istep ist
         return $
@@ -241,27 +241,99 @@ concats (Stream step state) = (Stream step' (Left state))
                 Skip s -> Skip (Right (Stream istep s))
                 Return r -> Skip (Left r)
 
+-- XXX Add tests.
+--- chunksOf 0 == chunksOf 1. This is consistent with the
+-- streaming library's behaviour.
+{-# INLINE_NORMAL chunksOf #-}
+chunksOf ::
+       (Functor f, Monad m) => Int -> Stream f m r -> Stream (Stream f m) m r
+chunksOf n (Stream step state) = n `seq` Stream step' (X state)
+  where
+    {-# INLINE_LATE step' #-}
+    step' (X st) = do
+        nxt <- step st
+        return $
+            case nxt of
+                Yield fs -> Yield (Stream ostep (Left (fs, 0)))
+                Skip s -> Skip (X s)
+                Return r -> Return r
+    step' (Y r) = return $ Return r
+    step' (Z fs) = return $ Yield (Stream ostep (Left (fs, 0)))
+
+    {-# INLINE_LATE ostep #-}
+    ostep (Left (fs, i)) = i `seq`
+        return $ Yield ((\s -> Right (s, i + 1)) `fmap` fs)
+    ostep (Right (st, i)) = i `seq` do
+        nxt <- step st
+        return $
+            case nxt of
+                Yield fs ->
+                    if i < n
+                        then Yield ((\s -> Right (s, i + 1)) `fmap` fs)
+                        else Return (Z fs)
+                Skip s -> Skip (Right (s, i))
+                Return r -> Return (Y r)
+
+data A x y z = X x | Y y | Z z
+
+{-# INLINE_NORMAL intercalates #-}
+intercalates :: (Functor f, Monad m) => Stream f m () -> Stream (Stream f m) m r -> Stream f m r
+intercalates sep (Stream step state) = Stream step' (X state)
+  where
+    {-# INLINE_LATE step' #-}
+    step' (X st) = do
+        nxt <- step st
+        return $ case nxt of
+            Yield fs -> Skip (Y fs)
+            Skip s -> Skip (X s)
+            Return r -> Return r
+
+    step' (Y (Stream istep ist)) = do
+        nxt <- istep ist
+        return $
+            case nxt of
+                Yield fs -> Yield (fmap (\s -> Y (Stream istep s)) fs)
+                Skip s -> Skip (Y (Stream istep s))
+                Return r -> Skip (Z (sep, r))
+
+    step' (Z (Stream istep ist, r)) = do
+        nxt <- istep ist
+        return $
+            case nxt of
+                Yield fs -> Yield (fmap (\s -> Z (Stream istep s, r)) fs)
+                Skip s -> Skip (Z (Stream istep s, r))
+                Return _ -> Skip (X r)
+
 -- XXX Implement without cons.
 {-# INLINE_NORMAL span #-}
-span :: Monad m => (a -> Bool) -> Stream (Of a) m r -> Stream (Of a) m (Stream (Of a) m r)
+span ::
+       Monad m
+    => (a -> Bool)
+    -> Stream (Of a) m r
+    -> Stream (Of a) m (Stream (Of a) m r)
 span pred (Stream step state) = Stream step' state
   where
     {-# INLINE_LATE step' #-}
     step' st = do
         nxt <- step st
-        return $ case nxt of
-            Yield (a :> rst) ->
-                if pred a
-                    then Yield (a :> rst)
-                    else Return (a `cons` (Stream step rst))
-            Skip s -> Skip s
-            Return r -> Return (Stream (\_ -> return $ Return r) ())
+        return $
+            case nxt of
+                Yield (a :> rst) ->
+                    if pred a
+                        then Yield (a :> rst)
+                        else Return (a `cons` (Stream step rst))
+                Skip s -> Skip s
+                Return r -> Return (Stream (\_ -> return $ Return r) ())
 
 -- XXX Implement without cons.
 -- XXX Can't believe this actually works.
 -- >>> S.printStream $ mapsM S.toList $ S.groupBy (>=) $ each [1,2,3,1,2,3,4,3,2,4,5,6,7,6,5]
 {-# INLINE_NORMAL groupBy #-}
-groupBy :: Monad m => (a -> a -> Bool) -> Stream (Of a) m r -> Stream (Stream (Of a) m) m r
+groupBy ::
+       Monad m
+    => (a -> a -> Bool)
+    -> Stream (Of a) m r
+    -> Stream (Stream (Of a) m) m r
 groupBy equals (Stream step state) = Stream step' (Right (state, Nothing))
   where
     {-# INLINE_LATE step' #-}
@@ -597,6 +669,23 @@ yield x = Stream step True
     {-# INLINE_LATE step #-}
     step True = return $ Yield (x :> False)
     step False = return $ Return ()
+
+{-# INLINE stdinLn #-}
+stdinLn :: MonadIO m => Stream (Of String) m ()
+stdinLn = fromHandle stdin
+
+{-# INLINE_NORMAL fromHandle #-}
+fromHandle :: MonadIO m => Handle -> Stream (Of String) m ()
+fromHandle h = Stream step ()
+  where
+    {-# INLINE_LATE step #-}
+    step _ = do
+        eof <- liftIO $ hIsEOF h
+        if eof
+            then return $ Return ()
+            else do
+                str <- liftIO $ hGetLine h
+                return $ Yield (str :> ())
 
 {-# INLINE_NORMAL effects #-}
 effects :: Monad m => Stream (Of a) m r -> m r
