@@ -12,8 +12,10 @@
 #include "inline.hs"
 
 module StreamingD
-    ( Stream
-    , Of (..)
+    ( Stream (..)
+    , Step (..)
+    , toStreamK
+    , fromStreamK
     , unfold
     , unfoldr
     , mapsM
@@ -30,6 +32,7 @@ module StreamingD
     , dropWhileM
     , dropWhile
     , each
+    , filterM
     , filter
     , mapM
     , map
@@ -44,6 +47,8 @@ module StreamingD
     , foldl'
     , foldlM'_
     , foldl'_
+    , foldrM
+    , foldrM_
     , mapM_
     , sum
     , sum_
@@ -61,15 +66,11 @@ import Control.Monad.IO.Class
 import Prelude
        hiding (drop, dropWhile, filter, last, map, mapM, mapM_, pred,
                span, splitAt, sum, take, takeWhile, zipWith)
-import GHC.Generics
 import GHC.Types (SPEC(..))
 import System.IO
 
-data Of a b = !a :> b deriving (Generic)
-
-instance Functor (Of a) where
-    {-# INLINE fmap #-}
-    fmap f (a :> x) = a :> (f x)
+import qualified StreamingK as K
+import Of
 
 data Stream f m r = forall s. Stream (s -> m (Step f s r)) s
 
@@ -562,9 +563,6 @@ zipWithM f (Stream stepa ta) (Stream stepb tb) = Stream step' (ta, tb, Nothing)
             Skip sb' -> return $ Skip (sa, sb', Just x)
             Return r -> return $ Return r
 
-{-# RULES "zipWithM xs xs"
-    forall f xs. zipWithM f xs xs = mapM (\x -> f x x) xs #-}
-
 {-# INLINE zipWith #-}
 zipWith ::
        Monad m
@@ -607,6 +605,31 @@ foldlM'_ fstep begin (Stream step state) = go SPEC state begin
 {-# INLINE foldl'_ #-}
 foldl'_ :: Monad m => (b -> a -> b) -> b -> Stream (Of a) m r -> m b
 foldl'_ fstep = foldlM'_ (\b a -> return (fstep b a))
+
+{-# INLINE_NORMAL foldrM #-}
+foldrM :: Monad m => (a -> b -> m b) -> b -> Stream (Of a) m r -> m (Of b r)
+foldrM f z (Stream step state) = go SPEC state
+  where
+    go !_ st = do
+        nxt <- step st
+        case nxt of
+            Yield (a :> s) -> do
+                (acc :> r) <- go SPEC s
+                acc' <- f a acc
+                return (acc' :> r)
+            Skip s -> go SPEC s
+            Return r -> return (z :> r)
+
+{-# INLINE_NORMAL foldrM_ #-}
+foldrM_ :: Monad m => (a -> b -> m b) -> b -> Stream (Of a) m r -> m b
+foldrM_ f z (Stream step state) = go SPEC state
+  where
+    go !_ st = do
+        nxt <- step st
+        case nxt of
+            Yield (a :> s) -> go SPEC s >>= f a
+            Skip s -> go SPEC s
+            Return _ -> return z
 
 {-# INLINE last #-}
 last :: Monad m => Stream (Of a) m r -> m (Of (Maybe a) r)
@@ -710,3 +733,29 @@ printStream (Stream step state) = go SPEC state
                 go SPEC rst
             Skip  s -> go SPEC s
             Return r -> return r
+
+{-# INLINE_LATE toStreamK #-}
+toStreamK :: (Functor f, Monad m) => Stream f m r -> K.Stream f m r
+toStreamK (Stream step state) = go state
+  where
+    go st = K.Stream $ \yld sng stp -> do
+        nxt <- step st
+        case nxt of
+            Yield fs -> yld (fmap go fs)
+            Skip s -> K.unStream (go s) yld sng stp
+            Return r -> stp r
+
+{-# RULES "fromStreamK/toStreamK fusion"
+    forall s. toStreamK (fromStreamK s) = s #-}
+{-# RULES "toStreamK/fromStreamK fusion"
+    forall s. fromStreamK (toStreamK s) = s #-}
+
+{-# INLINE_LATE fromStreamK #-}
+fromStreamK :: (Functor f, Monad m) => K.Stream f m r -> Stream f m r
+fromStreamK = Stream step
+  where
+    step m1 =
+        let stp r = return $ Return r
+            single fr = return $ Yield (fmap K.nil fr)
+            yieldk fs = return $ Yield fs
+         in K.unStream m1 yieldk single stp
