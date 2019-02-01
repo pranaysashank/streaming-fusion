@@ -16,8 +16,9 @@ module StreamingD
     , Step (..)
     , toStreamK
     , fromStreamK
-    , unfold
-    , unfoldr
+    , for
+    , unfoldM
+    , unfoldrM
     , mapsM
     , maps
     , run
@@ -28,10 +29,13 @@ module StreamingD
     , intercalates
     , span
     , splitAt
+    , enumFromStepN
     , drop
     , dropWhileM
     , dropWhile
+    , drained
     , each
+    , erase
     , filterM
     , filter
     , mapM
@@ -58,16 +62,21 @@ module StreamingD
     , last
     , last_
     , effects
+    , fromHandle
+    , toHandle
     , printStream
     , stdinLn
+    , readLn
     ) where
 
 import Control.Monad.IO.Class
+import Data.Functor.Identity (Identity(..))
 import Prelude
        hiding (drop, dropWhile, filter, last, map, mapM, mapM_, pred,
-               span, splitAt, sum, take, takeWhile, zipWith)
+               readLn, span, splitAt, sum, take, takeWhile, zipWith)
 import GHC.Types (SPEC(..))
-import System.IO
+import System.IO hiding (readLn)
+import Text.Read (readMaybe)
 
 import qualified StreamingK as K
 import Of
@@ -158,9 +167,9 @@ inspect (Stream step state) = go state
             Skip s -> go s
             Return r -> return (Left r)
 
-{-# INLINE_NORMAL unfold #-}
-unfold :: Monad m => (s -> m (Either r (f s))) -> s -> Stream f m r
-unfold gen state = (Stream step state)
+{-# INLINE_NORMAL unfoldM #-}
+unfoldM :: Monad m => (s -> m (Either r (f s))) -> s -> Stream f m r
+unfoldM gen state = (Stream step state)
   where
     {-# INLINE_LATE step #-}
     step st = do
@@ -169,9 +178,9 @@ unfold gen state = (Stream step state)
             Left r -> return $ Return r
             Right fs -> return $ Yield fs
 
-{-# INLINE_NORMAL unfoldr #-}
-unfoldr :: Monad m => (s -> m (Either r (a, s))) -> s -> Stream (Of a) m r
-unfoldr gen state = Stream step state
+{-# INLINE_NORMAL unfoldrM #-}
+unfoldrM :: Monad m => (s -> m (Either r (a, s))) -> s -> Stream (Of a) m r
+unfoldrM gen state = Stream step state
   where
     {-# INLINE_LATE step #-}
     step st = do
@@ -385,6 +394,16 @@ splitAt n (Stream step state) = Stream step' (Left (state, n-1))
                 Return r -> Return (Stream (\_ -> return (Return r)) ())
     step' (Right s) = return $ Return (Stream step s)
 
+-- TODO: Provide an enumerable instance instead of
+-- whatever vector was trying to do.
+{-# INLINE_NORMAL enumFromStepN #-}
+enumFromStepN :: (Num a, Monad m) => a -> a -> Int -> Stream (Of a) m ()
+enumFromStepN x y n = x `seq` y `seq` n `seq` Stream step (x, n)
+  where
+    {-# INLINE_LATE step #-}
+    step (w, m) | m > 0 = return $ Yield (w :> (w+y,m))
+                | otherwise = return $ Return ()
+
 {-# INLINE_NORMAL take #-}
 {-# SPECIALIZE take :: Monad m => Int -> Stream (Of a) m r -> Stream (Of a) m () #-}
 take :: (Functor f, Monad m) => Int -> Stream f m r -> Stream f m ()
@@ -468,6 +487,24 @@ dropWhileM f (Stream step state) = Stream step' (Left state)
 dropWhile :: Monad m => (a -> Bool) -> Stream (Of a) m r -> Stream (Of a) m ()
 dropWhile f = dropWhileM (return . f)
 
+{-# INLINE_NORMAL drained #-}
+drained :: Monad m => Stream (Of a) m (Stream (Of b) m r) -> Stream (Of a) m r
+drained (Stream step state) = Stream step' (Left state)
+  where
+    {-# INLINE_LATE step' #-}
+    step' (Left st) = do
+        nxt <- step st
+        return $ case nxt of
+            Yield (a :> rest) -> Yield (a :> (Left rest))
+            Skip s -> Skip (Left s)
+            Return r -> Skip (Right r)
+    step' (Right (Stream rstep rst)) = do
+        nxt <- rstep rst
+        return $ case nxt of
+            Yield (_ :> rest) -> Skip (Right (Stream rstep rest))
+            Skip s -> Skip (Right (Stream rstep s))
+            Return r -> Return r
+
 {-# INLINE_NORMAL each #-}
 each :: Monad m => [a] -> Stream (Of a) m ()
 each = Stream step
@@ -475,6 +512,18 @@ each = Stream step
     {-# INLINE_LATE step #-}
     step (x:xs) = return $ Yield (x :> xs)
     step _ = return $ Return ()
+
+{-# INLINE_NORMAL erase #-}
+erase :: Monad m => Stream (Of a) m r -> Stream Identity m r
+erase (Stream step state) = Stream step' state
+  where
+    {-# INLINE_LATE step' #-}
+    step' st = do
+        nxt <- step st
+        return $ case nxt of
+            Yield (_ :> rest) -> Yield (Identity rest)
+            Skip s -> Skip s
+            Return r -> Return r
 
 {-# INLINE_NORMAL filterM #-}
 filterM :: Monad m => (a -> m Bool) -> Stream (Of a) m r -> Stream (Of a) m r
@@ -523,6 +572,27 @@ mapM_ f (Stream step state) = go SPEC state
             Yield (x :> rest) -> f x *> go SPEC rest
             Skip s -> go SPEC s
             Return r -> return r
+
+{-# INLINE_NORMAL for #-}
+for :: (Functor f, Monad m) => Stream (Of a) m r -> (a -> Stream f m x) -> Stream f m r
+for (Stream step state) f = Stream step' (Left state)
+  where
+    {-# INLINE_LATE step' #-}
+    step' (Left st) = do
+        nxt <- step st
+        case nxt of
+            Yield (a :> rest) -> do
+                return $ Skip (Right (f a, rest))
+            Skip s -> return $ Skip (Left s)
+            Return r -> return $ Return r
+    step' (Right ((Stream ostep ost), st)) = do
+        nxt <- ostep ost
+        return $
+            case nxt of
+                Yield fs ->
+                    Yield ((\os -> Right ((Stream ostep os), st)) `fmap` fs)
+                Skip s -> Skip (Right ((Stream ostep s), st))
+                Return _ -> Skip (Left st)
 
 {-# INLINE_NORMAL scanl' #-}
 scanl' :: Monad m => (b -> a -> b) -> b -> Stream (Of a) m r -> Stream (Of b) m r
@@ -709,6 +779,34 @@ fromHandle h = Stream step ()
             else do
                 str <- liftIO $ hGetLine h
                 return $ Yield (str :> ())
+
+{-# INLINE_NORMAL toHandle #-}
+toHandle :: MonadIO m => Handle -> Stream (Of String) m r -> m r
+toHandle h (Stream step state) = go SPEC state
+  where
+    go !_ st = do
+        nxt <- step st
+        case nxt of
+            Yield (str :> rest) -> do
+                liftIO (hPutStrLn h str)
+                go SPEC rest
+            Skip s -> go SPEC s
+            Return r -> return r
+
+{-# INLINE_NORMAL readLn #-}
+readLn :: (MonadIO m, Read a) => Stream (Of a) m ()
+readLn = Stream step ()
+  where
+    {-# INLINE_LATE step #-}
+    step _ = do
+        eof <- liftIO isEOF
+        if eof
+            then return $ Return ()
+            else do
+                str <- liftIO getLine
+                return $ case readMaybe str of
+                    Nothing -> Skip ()
+                    Just s -> Yield (s :> ())
 
 {-# INLINE_NORMAL effects #-}
 effects :: Monad m => Stream (Of a) m r -> m r

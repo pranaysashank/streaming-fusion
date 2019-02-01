@@ -11,11 +11,15 @@ module StreamingK
     ( Stream(..)
     , append
     , cons
+    , consM
     , nil
     , yield
     , maps
+    , replicate
+    , replicateM
     ) where
 
+import Prelude hiding (replicate)
 import Of
 
 newtype Stream f m r =
@@ -34,6 +38,10 @@ nil r = Stream $ \_ _ stp -> stp r
 cons :: a -> Stream (Of a) m r -> Stream (Of a) m r
 cons a m = Stream $ \yld _ _ -> yld (a :> m)
 
+{-# INLINE consM #-}
+consM :: Monad m => m a -> Stream (Of a) m r -> Stream (Of a) m r
+consM m rest = Stream $ \yld _ _ -> m >>= \a -> yld (a :> rest)
+
 {-# INLINE yield #-}
 yield :: a -> Stream (Of a) m ()
 yield a = Stream $ \_ sng _ -> sng (a :> ())
@@ -47,6 +55,24 @@ maps phi m = go m
             let yieldk fs = yld (fmap go (phi fs))
                 single fr = sng (phi fr)
             in unStream m1 yieldk single stp
+
+{-# INLINE replicateM #-}
+replicateM :: Monad m => Int -> m a -> Stream (Of a) m ()
+replicateM n m = go n
+  where
+    go i =
+        if i <= 0
+            then nil ()
+            else m `consM` go (i - 1)
+
+{-# INLINE replicate #-}
+replicate :: Int -> a -> Stream (Of a) m ()
+replicate n a = go n
+  where
+    go i =
+        if i <= 0
+            then nil ()
+            else a `cons` go (i - 1)
 
 -- XXX If we constrain r to a Monoid, we can then mappend the r's together.
 -- Maybe we can declare a Monoid instance, that has a monoid constraint on r,
@@ -74,3 +100,18 @@ instance Functor f => Functor (Stream f m) where
                        yieldk fs = yld (fmap go fs)
                        single fr = sng (fmap f fr)
                     in unStream m yieldk single stop
+
+instance Functor f => Applicative (Stream f m) where
+
+instance (Functor f) => Monad (Stream f m) where
+    return r = nil r
+    -- (>>=) :: Stream f m r -> (r -> Stream f m r1) -> Stream f m r1
+    xs >>= f = Stream $ \yld sng stp ->
+                   let stop r = unStream (f r) yld sng stp
+                       yieldk fs = unStream (consL (fmap (>>= f) fs)) yld sng stp
+                       single fr = unStream (consL (fmap f fr)) yld sng stp
+                   in unStream xs yieldk single stop
+
+{-# INLINE consL #-}
+consL :: f (Stream f m r) -> Stream f m r
+consL xs = Stream (\yld _ _ -> yld $! xs)
