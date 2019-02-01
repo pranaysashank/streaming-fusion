@@ -19,6 +19,7 @@ module StreamingK
     , replicateM
     ) where
 
+import Control.Monad (ap)
 import Prelude hiding (replicate)
 import Of
 
@@ -102,9 +103,13 @@ instance Functor f => Functor (Stream f m) where
                     in unStream m yieldk single stop
 
 instance Functor f => Applicative (Stream f m) where
+   pure = nil
+
+   -- (<*>) :: Stream f m (a -> b) -> Stream f m a -> Stream f m c
+   (<*>) = ap
 
 instance (Functor f) => Monad (Stream f m) where
-    return r = nil r
+    return = pure
     -- (>>=) :: Stream f m r -> (r -> Stream f m r1) -> Stream f m r1
     xs >>= f = Stream $ \yld sng stp ->
                    let stop r = unStream (f r) yld sng stp
