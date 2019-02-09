@@ -36,4 +36,6 @@ I ran benchmarks using [streaming-benchmakrs](https://github.com/composewell/str
 
 ![Mixed Operations](charts/MixedOperationsx4-median-time.svg)
 
+More benchmarking results are available in the charts directory.
+
 The implementation is heavily adapted from streamly, and vector. The library can be easily benchmarked using [streaming-benchmarks](https://github.com/composewell/streaming-benchmarks).
