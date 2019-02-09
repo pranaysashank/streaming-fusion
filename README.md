@@ -30,7 +30,7 @@ It doesn't sacrifice the streaming characteristic to achieve this performance. T
 This above program doesn't accumulate, it is a streaming one. The stream type could be thought of as a generalisation of vector / streamly's Stream type with a functor layer. It is defined in `StreamingD` module. 
 
 ## Performance
-I ran benchmarks using [streaming-benchmakrs](https://github.com/composewell/streaming-benchmarks), and the results are fairly pleasing.
+I ran benchmarks using [streaming-benchmarks](https://github.com/composewell/streaming-benchmarks), and the results are fairly pleasing.
 
 ![Filtering Operations composed 4 times](charts/FilteringOperationsx4-median-time.svg)
 
