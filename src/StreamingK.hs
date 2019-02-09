@@ -94,6 +94,7 @@ append m1 m2 = go m1
 
 instance Functor f => Functor (Stream f m) where
     -- fmap :: (a -> b) -> Stream f m a -> Stream f m b
+    {-# INLINE fmap #-}
     fmap f m1 = go m1
       where
         go m = Stream $ \yld sng stp ->
@@ -103,14 +104,18 @@ instance Functor f => Functor (Stream f m) where
                     in unStream m yieldk single stop
 
 instance Functor f => Applicative (Stream f m) where
+   {-# INLINE pure #-}
    pure = nil
 
    -- (<*>) :: Stream f m (a -> b) -> Stream f m a -> Stream f m c
+   {-# INLINABLE (<*>) #-}
    (<*>) = ap
 
 instance (Functor f) => Monad (Stream f m) where
+    {-# INLINE return #-}
     return = pure
     -- (>>=) :: Stream f m r -> (r -> Stream f m r1) -> Stream f m r1
+    {-# INLINABLE (>>=) #-}
     xs >>= f = Stream $ \yld sng stp ->
                    let stop r = unStream (f r) yld sng stp
                        yieldk fs = unStream (consL (fmap (>>= f) fs)) yld sng stp
