@@ -125,7 +125,8 @@ instance (Functor f, Monad m) => Applicative (Stream f m) where
 
 instance (Functor f, Monad m) => Monad (Stream f m) where
     {-# INLINE return #-}
-    return = pure
+    return =
+        pure
 
 --  (>>=) :: Stream f m a -> (a -> Stream f m b) -> Stream f m b
     {-# INLINABLE (>>=) #-}
