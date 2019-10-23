@@ -76,7 +76,8 @@ notifications:
 matrix:
   include:
 
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
+  - stage: "Danger HLint"
+    env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
     before_install: gem install danger-hlint 'danger:~> 5.0'
 
   # --------------------------------------------------------------------------
@@ -84,7 +85,6 @@ matrix:
   # --------------------------------------------------------------------------
 
   allow_failures:
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
 
 # ------------------------------------------------------------------------
 #  Settings beyond this point are advanced and normally not tweaked
