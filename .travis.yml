@@ -87,7 +87,7 @@ matrix:
   # --------------------------------------------------------------------------
 
   allow_failures:
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="hlint ."
+  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="danger"
 
 # ------------------------------------------------------------------------
 #  Settings beyond this point are advanced and normally not tweaked
