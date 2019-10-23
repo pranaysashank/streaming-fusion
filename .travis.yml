@@ -79,13 +79,15 @@ matrix:
   - env: BUILD=cabal-v2 GHCVER=8.8.1 GHC_OPTIONS="" CABAL_BUILD_OPTIONS="--flag benchmark --flag inspection --allow-newer=base,ghc"
     addons: {apt: {packages: [cabal-install-head,ghc-8.8.1], sources: [hvr-ghc]}}
 
+  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="danger"
+    before_install: gem install danger-hlint 'danger:~> 5.0'
+
   # --------------------------------------------------------------------------
   # Builds that are allowed to fail
   # --------------------------------------------------------------------------
 
   allow_failures:
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="danger"
-    before_install: gem install danger-hlint 'danger:~> 5.0'
+  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="hlint ."
 
 # ------------------------------------------------------------------------
 #  Settings beyond this point are advanced and normally not tweaked
