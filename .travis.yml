@@ -66,6 +66,10 @@ notifications:
     on_success: change
     on_failure: always
 
+stages:
+  - compile
+  - lint
+
 # This matrix has total of 6 builds enabled, we try to cover last three major
 # GHC versions, stack, cabal, Linux and OSX with minimum number of builds
 # possible. You can uncomment other disabled builds or comment out existing
@@ -76,7 +80,13 @@ notifications:
 matrix:
   include:
 
-  - stage: "Danger HLint"
+  - stage: "compile"
+    env: BUILD=cabal-v2 GHCVER=8.8.1 GHC_OPTIONS=""
+    addons: {apt: {packages: [cabal-install-head,ghc-8.8.1], sources: [hvr-ghc]}}
+  - stage: "compile"
+    env: BUILD=cabal-v2 GHCVER=8.6.5 GHC_OPTIONS=""
+    addons: {apt: {packages: [cabal-install-2.4,ghc-8.6.5], sources: [hvr-ghc]}}
+  - stage: "lint"
     env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="ls -l vendor/bundle" 
     before_install: gem install danger-hlint 'danger:~> 5.0'
 
