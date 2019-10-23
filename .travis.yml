@@ -77,7 +77,7 @@ matrix:
   include:
 
   - stage: "Danger HLint"
-    env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
+    env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="ls -l vendor/bundle" 
     before_install: gem install danger-hlint 'danger:~> 5.0'
 
   # --------------------------------------------------------------------------
