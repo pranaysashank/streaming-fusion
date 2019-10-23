@@ -84,7 +84,7 @@ matrix:
   # --------------------------------------------------------------------------
 
   allow_failures:
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="danger"
+  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
 
 # ------------------------------------------------------------------------
 #  Settings beyond this point are advanced and normally not tweaked
