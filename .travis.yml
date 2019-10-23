@@ -76,10 +76,7 @@ notifications:
 matrix:
   include:
 
-  - env: BUILD=cabal-v2 GHCVER=8.8.1 GHC_OPTIONS="" CABAL_BUILD_OPTIONS="--flag benchmark --flag inspection --allow-newer=base,ghc"
-    addons: {apt: {packages: [cabal-install-head,ghc-8.8.1], sources: [hvr-ghc]}}
-
-  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="danger"
+  - env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="./vendor/bundle/bin/danger"
     before_install: gem install danger-hlint 'danger:~> 5.0'
 
   # --------------------------------------------------------------------------
@@ -102,6 +99,8 @@ cache:
   - $HOME/.ghcjs
   - $HOME/.local
   - $HOME/.stack
+  - vendor/bundle
+
 install: true
 
 script:
