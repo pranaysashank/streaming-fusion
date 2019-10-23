@@ -22,6 +22,8 @@ module StreamingD
     , mapsM
     , maps
     , run
+    , store
+    , copy
     , concats
     , chunksOf
     , groupBy
@@ -143,6 +145,9 @@ instance (Functor f, Monad m) => Monad (Stream f m) where
                   Skip   s -> Skip (Right (Stream istep s))
                   Return r -> Return r
 
+instance (Functor f, MonadIO m) => MonadIO (Stream f m) where
+    liftIO m = Stream (\_ -> liftIO m >>= return . Return) ()
+
 {-# INLINE_NORMAL cons #-}
 cons :: Monad m => a -> Stream (Of a) m r -> Stream (Of a) m r
 cons a (Stream step state) = Stream step' Nothing
@@ -231,6 +236,25 @@ run (Stream step state) = go SPEC state
             Yield fs -> fs >>= go SPEC
             Skip s -> go SPEC s
             Return r -> return r
+
+lift :: Monad m => m a -> Stream f m a
+lift m = Stream (\_ -> m >>= return . Return) ()
+
+{-# INLINE store #-}
+store :: Monad m => (Stream (Of a) (Stream (Of a) m) r -> t) -> Stream (Of a) m r -> t
+store f x = f (copy x)
+
+copy :: Monad m => Stream (Of a) m r -> Stream (Of a) (Stream (Of a) m) r
+copy (Stream step state) = Stream step' state
+  where
+    step' st = do
+        nxt <- lift (step st)
+        case nxt of
+            Yield (a :> s) -> Stream istep (Left a, s)
+            Skip s -> Stream (\_ -> return $ Return (Skip s)) ()
+            Return r -> Stream (\_ -> return $ Return (Return r)) ()
+    istep (Left prev, st) = return $ Yield (prev :> (Right prev, st))
+    istep (Right prev, st) = return $ Return (Yield (prev :> st))
 
 {-# INLINE_NORMAL concats #-}
 concats :: (Monad m, Functor f) => Stream (Stream f m) m r -> Stream f m r
