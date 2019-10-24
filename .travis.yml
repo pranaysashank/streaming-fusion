@@ -88,7 +88,7 @@ matrix:
 #    addons: {apt: {packages: [cabal-install-2.4,ghc-8.6.5], sources: [hvr-ghc]}}
   - stage: "lint"
     env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="`gem env home`/wrappers/danger"
-    before_install: gem install danger-hlint 'danger:~> 5.0' -i vendor && ls -R `gem env home`
+    before_install: gem install danger-hlint 'danger:~> 5.0' && ls -R `gem env home`
 
   # --------------------------------------------------------------------------
   # Builds that are allowed to fail
