@@ -66,9 +66,9 @@ notifications:
     on_success: change
     on_failure: always
 
-stages:
-  - compile
-  - lint
+#stages:
+#  - compile
+#  - lint
 
 # This matrix has total of 6 builds enabled, we try to cover last three major
 # GHC versions, stack, cabal, Linux and OSX with minimum number of builds
@@ -80,15 +80,15 @@ stages:
 matrix:
   include:
 
-  - stage: "compile"
-    env: BUILD=cabal-v2 GHCVER=8.8.1 GHC_OPTIONS=""
-    addons: {apt: {packages: [cabal-install-head,ghc-8.8.1], sources: [hvr-ghc]}}
-  - stage: "compile"
-    env: BUILD=cabal-v2 GHCVER=8.6.5 GHC_OPTIONS=""
-    addons: {apt: {packages: [cabal-install-2.4,ghc-8.6.5], sources: [hvr-ghc]}}
+#  - stage: "compile"
+#    env: BUILD=cabal-v2 GHCVER=8.8.1 GHC_OPTIONS=""
+#    addons: {apt: {packages: [cabal-install-head,ghc-8.8.1], sources: [hvr-ghc]}}
+#  - stage: "compile"
+#    env: BUILD=cabal-v2 GHCVER=8.6.5 GHC_OPTIONS=""
+#    addons: {apt: {packages: [cabal-install-2.4,ghc-8.6.5], sources: [hvr-ghc]}}
   - stage: "lint"
-    env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="ls -l vendor/bundle" 
-    before_install: gem install danger-hlint 'danger:~> 5.0'
+    env: BUILD=stack RESOLVER=lts-13 HLINT_COMMANDS="vendor/bin/danger"
+    before_install: gem env home && tree `gem env home` #gem install danger-hlint 'danger:~> 5.0' -i vendor
 
   # --------------------------------------------------------------------------
   # Builds that are allowed to fail
