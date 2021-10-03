@@ -125,7 +125,10 @@ instance (Functor f) => Monad (Stream f m) where
 
 instance MonadTrans (Stream f) where
     {-# INLINE lift #-}
-    lift m = Stream $ \_ _ r -> m >>= r
+    lift m = go (fmap nil m)
+        where
+        go mstrm = Stream $ \yld sng r ->
+             mstrm >>= \strm -> unStream strm yld sng r
 
 {-# INLINE consL #-}
 consL :: f (Stream f m r) -> Stream f m r
