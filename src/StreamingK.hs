@@ -20,6 +20,7 @@ module StreamingK
     ) where
 
 import Control.Monad (ap)
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Prelude hiding (replicate)
 import Of
 
@@ -121,6 +122,10 @@ instance (Functor f) => Monad (Stream f m) where
                        yieldk fs = unStream (consL (fmap (>>= f) fs)) yld sng stp
                        single fr = unStream (consL (fmap f fr)) yld sng stp
                    in unStream xs yieldk single stop
+
+instance MonadTrans (Stream f) where
+    {-# INLINE lift #-}
+    lift m = Stream $ \_ _ r -> m >>= r
 
 {-# INLINE consL #-}
 consL :: f (Stream f m r) -> Stream f m r

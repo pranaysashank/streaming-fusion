@@ -19,6 +19,7 @@ module StreamingD
     , for
     , unfoldM
     , unfoldrM
+    , lift
     , mapsM
     , maps
     , run
